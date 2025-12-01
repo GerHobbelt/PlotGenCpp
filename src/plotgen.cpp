@@ -32,26 +32,50 @@ PlotGen::PlotGen(unsigned int width, unsigned int height, unsigned int rows, uns
     texture.create(width, height);
     texture.setSmooth(true);
 
-    // Search for the font in several possible locations
+    // Search for the font in several possible locations (Linux, macOS, repo config)
+    bool font_ok = false;
     if (font.loadFromFile("fonts/arial.ttf"))
     {
         std::cout << "Font loaded from current directory" << std::endl;
+        font_ok = true;
     }
     else if (font.loadFromFile("build/arial.ttf"))
     {
         std::cout << "Font loaded from build directory" << std::endl;
+        font_ok = true;
     }
+    else if (font.loadFromFile("config/arial.ttf"))
+    {
+        std::cout << "Font loaded from project config directory" << std::endl;
+        font_ok = true;
+    }
+    // Common Linux fonts
     else if (font.loadFromFile("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"))
     {
         std::cout << "LiberationSans font loaded" << std::endl;
+        font_ok = true;
     }
     else if (font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
     {
         std::cout << "DejaVuSans font loaded" << std::endl;
+        font_ok = true;
     }
-    else
+    // macOS typical font locations
+    else if (font.loadFromFile("/Library/Fonts/Arial.ttf"))
     {
-        std::cerr << "WARNING: Unable to load a font compatible with Unicode characters" << std::endl;
+        std::cout << "Arial font loaded from /Library/Fonts" << std::endl;
+        font_ok = true;
+    }
+    else if (font.loadFromFile("/System/Library/Fonts/Supplemental/Arial.ttf"))
+    {
+        std::cout << "Arial font loaded from /System/Library/Fonts/Supplemental" << std::endl;
+        font_ok = true;
+    }
+
+    if (!font_ok)
+    {
+        std::cerr << "WARNING: Unable to load a font compatible with Unicode characters. "
+                  << "Tried several common locations (fonts/, build/, config/, system paths)." << std::endl;
         throw std::runtime_error("Unable to load a font supporting Unicode");
     }
 

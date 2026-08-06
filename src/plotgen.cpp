@@ -29,44 +29,44 @@ PlotGen::PlotGen(unsigned int width, unsigned int height, unsigned int rows, uns
     : width(width), height(height), rows(rows), cols(cols) // Ne pas initialiser la fenêtre ici
 {
     // Créer uniquement la texture pour le rendu, mais pas la fenêtre visible
-    texture.create(width, height);
+    plotgen_sf::resize_render_texture(texture, width, height);
     texture.setSmooth(true);
 
     // Search for the font in several possible locations (Linux, macOS, repo config)
     bool font_ok = false;
-    if (font.loadFromFile("fonts/arial.ttf"))
+    if (plotgen_sf::load_font(font, "fonts/arial.ttf"))
     {
         std::cout << "Font loaded from current directory" << std::endl;
         font_ok = true;
     }
-    else if (font.loadFromFile("build/arial.ttf"))
+    else if (plotgen_sf::load_font(font, "build/arial.ttf"))
     {
         std::cout << "Font loaded from build directory" << std::endl;
         font_ok = true;
     }
-    else if (font.loadFromFile("config/arial.ttf"))
+    else if (plotgen_sf::load_font(font, "config/arial.ttf"))
     {
         std::cout << "Font loaded from project config directory" << std::endl;
         font_ok = true;
     }
     // Common Linux fonts
-    else if (font.loadFromFile("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"))
+    else if (plotgen_sf::load_font(font, "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"))
     {
         std::cout << "LiberationSans font loaded" << std::endl;
         font_ok = true;
     }
-    else if (font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
+    else if (plotgen_sf::load_font(font, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"))
     {
         std::cout << "DejaVuSans font loaded" << std::endl;
         font_ok = true;
     }
     // macOS typical font locations
-    else if (font.loadFromFile("/Library/Fonts/Arial.ttf"))
+    else if (plotgen_sf::load_font(font, "/Library/Fonts/Arial.ttf"))
     {
         std::cout << "Arial font loaded from /Library/Fonts" << std::endl;
         font_ok = true;
     }
-    else if (font.loadFromFile("/System/Library/Fonts/Supplemental/Arial.ttf"))
+    else if (plotgen_sf::load_font(font, "/System/Library/Fonts/Supplemental/Arial.ttf"))
     {
         std::cout << "Arial font loaded from /System/Library/Fonts/Supplemental" << std::endl;
         font_ok = true;
@@ -638,26 +638,43 @@ void PlotGen::showSFML()
 
     // Créer la fenêtre seulement lorsque show() est explicitement appelé
     sf::ContextSettings settings;
-    settings.antialiasingLevel = 8;
-    window.create(sf::VideoMode(width, height), "PlotGen", sf::Style::Default, settings);
+    plotgen_sf::set_antialiasing(settings, 8);
+    plotgen_sf::create_window(window, width, height, "PlotGen", settings);
 
     // Configurer le sprite
-    sprite.setTexture(texture.getTexture());
+    sf::Sprite sprite = plotgen_sf::make_sprite(texture.getTexture());
 
     // Main loop
     while (window.isOpen())
     {
-        sf::Event event;
-        while (window.pollEvent(event))
+        // Poll events (API differs between SFML 2 and SFML 3)
+        bool should_close = false;
+#if PLOTGEN_SFML3
+        while (const std::optional sfml_event = window.pollEvent())
         {
-            if (event.type == sf::Event::Closed)
-                window.close();
-            else if (event.type == sf::Event::KeyPressed)
+            if (sfml_event->is<sf::Event::Closed>())
+                should_close = true;
+            else if (sfml_event->is<sf::Event::KeyPressed>())
             {
-                if (event.key.code == sf::Keyboard::Escape)
-                    window.close();
+                if (sfml_event->getIf<sf::Event::KeyPressed>()->code == sf::Keyboard::Key::Escape)
+                    should_close = true;
             }
         }
+#else
+        sf::Event sfml_event;
+        while (window.pollEvent(sfml_event))
+        {
+            if (sfml_event.type == sf::Event::Closed)
+                should_close = true;
+            else if (sfml_event.type == sf::Event::KeyPressed)
+            {
+                if (sfml_event.key.code == sf::Keyboard::Escape)
+                    should_close = true;
+            }
+        }
+#endif
+        if (should_close)
+            window.close();
 
         // Render and display
         window.clear(sf::Color::White);
@@ -751,7 +768,7 @@ void PlotGen::save(const std::string &filename)
         {
             for (unsigned int x = 0; x < width; ++x)
             {
-                sf::Color c = screenshot.getPixel(x, y);
+                sf::Color c = plotgen_sf::get_pixel(screenshot, x, y);
                 size_t index = (y * width + x) * 3;
                 pixels[index] = c.r;
                 pixels[index + 1] = c.g;
@@ -1165,12 +1182,11 @@ void PlotGen::render()
                 double x_offset = (subplot_width - min_size) / 2.0f;
                 double y_offset = (subplot_height - min_size) / 2.0f;
 
-                sf::View view(sf::FloatRect(0, 0, min_size, min_size));
+                sf::View view(sf::FloatRect({0.0f, 0.0f}, {static_cast<float>(min_size), static_cast<float>(min_size)}));
                 view.setViewport(sf::FloatRect(
-                    static_cast<double>(col) / cols + x_offset / width,
-                    static_cast<double>(row) / rows + y_offset / height,
-                    min_size / width,
-                    min_size / height));
+                    {static_cast<float>(col) / cols + static_cast<float>(x_offset) / width,
+                     static_cast<float>(row) / rows + static_cast<float>(y_offset) / height},
+                    {static_cast<float>(min_size) / width, static_cast<float>(min_size) / height}));
                 texture.setView(view);
             }
             else if (fig.equal_axes)
@@ -1179,22 +1195,20 @@ void PlotGen::render()
                 double x_offset = (subplot_width - min_size) / 2.0f;
                 double y_offset = (subplot_height - min_size) / 2.0f;
 
-                sf::View view(sf::FloatRect(0, 0, min_size, min_size));
+                sf::View view(sf::FloatRect({0.0f, 0.0f}, {static_cast<float>(min_size), static_cast<float>(min_size)}));
                 view.setViewport(sf::FloatRect(
-                    static_cast<double>(col) / cols + x_offset / width,
-                    static_cast<double>(row) / rows + y_offset / height,
-                    min_size / width,
-                    min_size / height));
+                    {static_cast<float>(col) / cols + static_cast<float>(x_offset) / width,
+                     static_cast<float>(row) / rows + static_cast<float>(y_offset) / height},
+                    {static_cast<float>(min_size) / width, static_cast<float>(min_size) / height}));
                 texture.setView(view);
             }
             else
             {
-                sf::View view(sf::FloatRect(0, 0, subplot_width, subplot_height));
+                sf::View view(sf::FloatRect({0.0f, 0.0f},
+                                            {static_cast<float>(subplot_width), static_cast<float>(subplot_height)}));
                 view.setViewport(sf::FloatRect(
-                    static_cast<double>(col) / cols,
-                    static_cast<double>(row) / rows,
-                    1.0f / cols,
-                    1.0f / rows));
+                    {static_cast<float>(col) / cols, static_cast<float>(row) / rows},
+                    {1.0f / cols, 1.0f / rows}));
                 texture.setView(view);
             }
 
@@ -1263,14 +1277,14 @@ void PlotGen::draw_axes(const Figure &fig, double w, double h)
     }
 
     // X axis
-    sf::VertexArray xAxis(sf::Lines, 2);
+    sf::VertexArray xAxis(plotgen_sf::primitive_lines(), 2);
     xAxis[0].position = to_screen(fig, fig.xmin, 0, w, h);
     xAxis[1].position = to_screen(fig, fig.xmax, 0, w, h);
     xAxis[0].color = sf::Color::Black;
     xAxis[1].color = sf::Color::Black;
 
     // Y axis
-    sf::VertexArray yAxis(sf::Lines, 2);
+    sf::VertexArray yAxis(plotgen_sf::primitive_lines(), 2);
     yAxis[0].position = to_screen(fig, 0, fig.ymin, w, h);
     yAxis[1].position = to_screen(fig, 0, fig.ymax, w, h);
     yAxis[0].color = sf::Color::Black;
@@ -1284,7 +1298,7 @@ void PlotGen::draw_axes(const Figure &fig, double w, double h)
     for (int i = 0; i <= numTicksX; ++i)
     {
         double x = fig.xmin + (fig.xmax - fig.xmin) * i / numTicksX;
-        sf::VertexArray tick(sf::Lines, 2);
+        sf::VertexArray tick(plotgen_sf::primitive_lines(), 2);
         tick[0].position = to_screen(fig, x, 0, w, h);
         tick[1].position = to_screen(fig, x, 0, w, h) + sf::Vector2f(0, 5);
         tick[0].color = sf::Color::Black;
@@ -1292,9 +1306,7 @@ void PlotGen::draw_axes(const Figure &fig, double w, double h)
         texture.draw(tick);
 
         // Tick value
-        sf::Text tickLabel;
-        tickLabel.setFont(font);
-        tickLabel.setCharacterSize(14);
+        sf::Text tickLabel = plotgen_sf::make_text(font, 14);
         tickLabel.setFillColor(sf::Color::Black);
 
         // Use appropriate decimal precision
@@ -1324,7 +1336,7 @@ void PlotGen::draw_axes(const Figure &fig, double w, double h)
     for (int i = 0; i <= numTicksY; ++i)
     {
         double y = fig.ymin + (fig.ymax - fig.ymin) * i / numTicksY;
-        sf::VertexArray tick(sf::Lines, 2);
+        sf::VertexArray tick(plotgen_sf::primitive_lines(), 2);
         tick[0].position = to_screen(fig, 0, y, w, h);
         tick[1].position = to_screen(fig, 0, y, w, h) + sf::Vector2f(-5, 0);
         tick[0].color = sf::Color::Black;
@@ -1332,9 +1344,7 @@ void PlotGen::draw_axes(const Figure &fig, double w, double h)
         texture.draw(tick);
 
         // Tick value
-        sf::Text tickLabel;
-        tickLabel.setFont(font);
-        tickLabel.setCharacterSize(14);
+        sf::Text tickLabel = plotgen_sf::make_text(font, 14);
         tickLabel.setFillColor(sf::Color::Black);
 
         // Use appropriate decimal precision
@@ -1378,7 +1388,7 @@ void PlotGen::draw_grid(const Figure &fig, double w, double h)
     // Draw major grid
     if (fig.show_major_grid)
     {
-        sf::VertexArray majorGrid(sf::Lines);
+        sf::VertexArray majorGrid(plotgen_sf::primitive_lines());
 
         // Major vertical lines
         for (int i = 0; i <= numTicksX; ++i)
@@ -1387,8 +1397,8 @@ void PlotGen::draw_grid(const Figure &fig, double w, double h)
             sf::Vector2f top = to_screen(fig, x, fig.ymin, w, h);
             sf::Vector2f bottom = to_screen(fig, x, fig.ymax, w, h);
 
-            majorGrid.append(sf::Vertex(top, fig.major_grid_color));
-            majorGrid.append(sf::Vertex(bottom, fig.major_grid_color));
+            majorGrid.append(plotgen_sf::make_vertex(top, fig.major_grid_color));
+            majorGrid.append(plotgen_sf::make_vertex(bottom, fig.major_grid_color));
         }
 
         // Major horizontal lines
@@ -1398,8 +1408,8 @@ void PlotGen::draw_grid(const Figure &fig, double w, double h)
             sf::Vector2f left = to_screen(fig, fig.xmin, y, w, h);
             sf::Vector2f right = to_screen(fig, fig.xmax, y, w, h);
 
-            majorGrid.append(sf::Vertex(left, fig.major_grid_color));
-            majorGrid.append(sf::Vertex(right, fig.major_grid_color));
+            majorGrid.append(plotgen_sf::make_vertex(left, fig.major_grid_color));
+            majorGrid.append(plotgen_sf::make_vertex(right, fig.major_grid_color));
         }
 
         texture.draw(majorGrid);
@@ -1408,7 +1418,7 @@ void PlotGen::draw_grid(const Figure &fig, double w, double h)
     // Draw minor grid
     if (fig.show_minor_grid)
     {
-        sf::VertexArray minorGrid(sf::Lines);
+        sf::VertexArray minorGrid(plotgen_sf::primitive_lines());
 
         // Minor vertical lines
         for (int i = 0; i < numTicksX; ++i)
@@ -1422,8 +1432,8 @@ void PlotGen::draw_grid(const Figure &fig, double w, double h)
                 sf::Vector2f top = to_screen(fig, x, fig.ymin, w, h);
                 sf::Vector2f bottom = to_screen(fig, x, fig.ymax, w, h);
 
-                minorGrid.append(sf::Vertex(top, fig.minor_grid_color));
-                minorGrid.append(sf::Vertex(bottom, fig.minor_grid_color));
+                minorGrid.append(plotgen_sf::make_vertex(top, fig.minor_grid_color));
+                minorGrid.append(plotgen_sf::make_vertex(bottom, fig.minor_grid_color));
             }
         }
 
@@ -1439,8 +1449,8 @@ void PlotGen::draw_grid(const Figure &fig, double w, double h)
                 sf::Vector2f left = to_screen(fig, fig.xmin, y, w, h);
                 sf::Vector2f right = to_screen(fig, fig.xmax, y, w, h);
 
-                minorGrid.append(sf::Vertex(left, fig.minor_grid_color));
-                minorGrid.append(sf::Vertex(right, fig.minor_grid_color));
+                minorGrid.append(plotgen_sf::make_vertex(left, fig.minor_grid_color));
+                minorGrid.append(plotgen_sf::make_vertex(right, fig.minor_grid_color));
             }
         }
 
@@ -1475,7 +1485,7 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
             double r_value = max_r * i / numCircles;
 
             sf::CircleShape circle(radius);
-            circle.setOrigin(radius, radius);
+            plotgen_sf::set_origin(circle, radius, radius);
             circle.setPosition(center);
             circle.setFillColor(sf::Color::Transparent);
             circle.setOutlineColor(fig.major_grid_color);
@@ -1483,9 +1493,7 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
             texture.draw(circle);
 
             // Add radius labels with one decimal place
-            sf::Text rLabel;
-            rLabel.setFont(font);
-            rLabel.setCharacterSize(10);
+            sf::Text rLabel = plotgen_sf::make_text(font, 10);
             rLabel.setFillColor(sf::Color::Black);
 
             // Format radius value with one decimal place
@@ -1494,26 +1502,24 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
             rLabel.setString(r_buffer);
 
             sf::FloatRect textRect = rLabel.getLocalBounds();
-            rLabel.setPosition(center.x + radius * std::cos(3.14f / 4) - textRect.width / 2,
-                               center.y - radius * std::sin(3.14f / 4) - textRect.height / 2);
+            plotgen_sf::set_position(rLabel, center.x + radius * std::cos(3.14f / 4) - plotgen_sf::rect_width(textRect) / 2,
+                               center.y - radius * std::sin(3.14f / 4) - plotgen_sf::rect_height(textRect) / 2);
             texture.draw(rLabel);
         }
 
         // Rays from center
-        sf::VertexArray rays(sf::Lines);
+        sf::VertexArray rays(plotgen_sf::primitive_lines());
         for (int i = 0; i < numRays; ++i)
         {
             double angle = 2 * M_PI * i / numRays;
             sf::Vector2f end(center.x + max_radius * std::cos(angle),
                              center.y - max_radius * std::sin(angle));
 
-            rays.append(sf::Vertex(center, fig.major_grid_color));
-            rays.append(sf::Vertex(end, fig.major_grid_color));
+            rays.append(plotgen_sf::make_vertex(center, fig.major_grid_color));
+            rays.append(plotgen_sf::make_vertex(end, fig.major_grid_color));
 
             // Add angle labels (in degrees) with one decimal place
-            sf::Text angleLabel;
-            angleLabel.setFont(font);
-            angleLabel.setCharacterSize(12);
+            sf::Text angleLabel = plotgen_sf::make_text(font, 12);
             angleLabel.setFillColor(sf::Color::Black);
 
             // Calculate degrees and format with one decimal place
@@ -1528,8 +1534,8 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
             sf::FloatRect textRect = angleLabel.getLocalBounds();
 
             // Position the label slightly beyond the end of the ray
-            sf::Vector2f labelPos(center.x + (max_radius + 10) * std::cos(angle) - textRect.width / 2,
-                                  center.y - (max_radius + 10) * std::sin(angle) - textRect.height / 2);
+            sf::Vector2f labelPos(center.x + (max_radius + 10) * std::cos(angle) - plotgen_sf::rect_width(textRect) / 2,
+                                  center.y - (max_radius + 10) * std::sin(angle) - plotgen_sf::rect_height(textRect) / 2);
             angleLabel.setPosition(labelPos);
             texture.draw(angleLabel);
         }
@@ -1551,7 +1557,7 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
                 double radius = radiusStart + j * radiusStep;
 
                 sf::CircleShape circle(radius);
-                circle.setOrigin(radius, radius);
+                plotgen_sf::set_origin(circle, radius, radius);
                 circle.setPosition(center);
                 circle.setFillColor(sf::Color::Transparent);
                 circle.setOutlineColor(fig.minor_grid_color);
@@ -1561,7 +1567,7 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
         }
 
         // Minor rays between major ones
-        sf::VertexArray minorRays(sf::Lines);
+        sf::VertexArray minorRays(plotgen_sf::primitive_lines());
         const int numMinorRays = numRays * 2; // One ray every 15 degrees
 
         for (int i = 0; i < numMinorRays; ++i)
@@ -1574,8 +1580,8 @@ void PlotGen::draw_polar_grid(const Figure &fig, double w, double h)
             sf::Vector2f end(center.x + max_radius * std::cos(angle),
                              center.y - max_radius * std::sin(angle));
 
-            minorRays.append(sf::Vertex(center, fig.minor_grid_color));
-            minorRays.append(sf::Vertex(end, fig.minor_grid_color));
+            minorRays.append(plotgen_sf::make_vertex(center, fig.minor_grid_color));
+            minorRays.append(plotgen_sf::make_vertex(end, fig.minor_grid_color));
         }
         texture.draw(minorRays);
     }
@@ -1604,11 +1610,11 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
         if (thickness <= 1.0f)
         {
             // Pour les lignes fines, utiliser LineStrip (plus efficace)
-            sf::VertexArray line(sf::LineStrip);
+            sf::VertexArray line(plotgen_sf::primitive_line_strip());
             for (size_t i = 0; i < curve.x.size(); ++i)
             {
                 sf::Vector2f position = symbolPoints[i];
-                sf::Vertex point(position, curve.style.color);
+                sf::Vertex point = plotgen_sf::make_vertex(position, curve.style.color);
                 line.append(point);
             }
             texture.draw(line);
@@ -1618,7 +1624,7 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
             // Pour les lignes épaisses, utiliser des triangles
             if (curve.x.size() > 1)
             {
-                sf::VertexArray thickLine(sf::Triangles);
+                sf::VertexArray thickLine(plotgen_sf::primitive_triangles());
 
                 for (size_t i = 0; i < curve.x.size() - 1; ++i)
                 {
@@ -1638,10 +1644,10 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
                         // Calculer les points pour former un rectangle (deux triangles)
                         sf::Vector2f offset = unitPerpendicular * (thickness / 2.0f);
 
-                        sf::Vertex v1(p1 + offset, curve.style.color);
-                        sf::Vertex v2(p2 + offset, curve.style.color);
-                        sf::Vertex v3(p2 - offset, curve.style.color);
-                        sf::Vertex v4(p1 - offset, curve.style.color);
+                        sf::Vertex v1 = plotgen_sf::make_vertex(p1 + offset, curve.style.color);
+                        sf::Vertex v2 = plotgen_sf::make_vertex(p2 + offset, curve.style.color);
+                        sf::Vertex v3 = plotgen_sf::make_vertex(p2 - offset, curve.style.color);
+                        sf::Vertex v4 = plotgen_sf::make_vertex(p1 - offset, curve.style.color);
 
                         // Premier triangle
                         thickLine.append(v1);
@@ -1665,7 +1671,7 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
         if (thickness <= 1.0f)
         {
             // Lignes fines
-            sf::VertexArray line(sf::Lines);
+            sf::VertexArray line(plotgen_sf::primitive_lines());
             for (size_t i = 0; i < curve.x.size() - 1; i += 2)
             {
                 if (i + 1 < symbolPoints.size())
@@ -1673,8 +1679,8 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
                     sf::Vector2f p1 = symbolPoints[i];
                     sf::Vector2f p2 = symbolPoints[i + 1];
 
-                    line.append(sf::Vertex(p1, curve.style.color));
-                    line.append(sf::Vertex(p2, curve.style.color));
+                    line.append(plotgen_sf::make_vertex(p1, curve.style.color));
+                    line.append(plotgen_sf::make_vertex(p2, curve.style.color));
                 }
             }
             texture.draw(line);
@@ -1684,7 +1690,7 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
             // Lignes épaisses pointillées
             if (curve.x.size() > 1)
             {
-                sf::VertexArray thickLine(sf::Triangles);
+                sf::VertexArray thickLine(plotgen_sf::primitive_triangles());
 
                 for (size_t i = 0; i < curve.x.size() - 1; i += 2)
                 {
@@ -1706,10 +1712,10 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
 
                         sf::Vector2f offset = unitPerpendicular * (thickness / 2.0f);
 
-                        sf::Vertex v1(p1 + offset, curve.style.color);
-                        sf::Vertex v2(p2 + offset, curve.style.color);
-                        sf::Vertex v3(p2 - offset, curve.style.color);
-                        sf::Vertex v4(p1 - offset, curve.style.color);
+                        sf::Vertex v1 = plotgen_sf::make_vertex(p1 + offset, curve.style.color);
+                        sf::Vertex v2 = plotgen_sf::make_vertex(p2 + offset, curve.style.color);
+                        sf::Vertex v3 = plotgen_sf::make_vertex(p2 - offset, curve.style.color);
+                        sf::Vertex v4 = plotgen_sf::make_vertex(p1 - offset, curve.style.color);
 
                         thickLine.append(v1);
                         thickLine.append(v2);
@@ -1727,10 +1733,10 @@ void PlotGen::draw_curve(const Figure &fig, const Figure::Curve &curve, double w
     }
     else if (curve.style.line_style == "points")
     { // points
-        sf::VertexArray line(sf::Points);
+        sf::VertexArray line(plotgen_sf::primitive_points());
         for (const auto &position : symbolPoints)
         {
-            sf::Vertex point(position, curve.style.color);
+            sf::Vertex point = plotgen_sf::make_vertex(position, curve.style.color);
             line.append(point);
         }
         texture.draw(line);
@@ -1798,22 +1804,22 @@ sf::Color PlotGen::getColorFromHeight(double height)
     if (height < 0.25f)
     {
         // Blue to cyan
-        return sf::Color(0, static_cast<sf::Uint8>(255 * height * 4), 255);
+        return sf::Color(0, static_cast<std::uint8_t>(255 * height * 4), 255);
     }
     else if (height < 0.5f)
     {
         // Cyan to green
-        return sf::Color(0, 255, static_cast<sf::Uint8>(255 * (1 - (height - 0.25f) * 4)));
+        return sf::Color(0, 255, static_cast<std::uint8_t>(255 * (1 - (height - 0.25f) * 4)));
     }
     else if (height < 0.75f)
     {
         // Green to yellow
-        return sf::Color(static_cast<sf::Uint8>(255 * (height - 0.5f) * 4), 255, 0);
+        return sf::Color(static_cast<std::uint8_t>(255 * (height - 0.5f) * 4), 255, 0);
     }
     else
     {
         // Yellow to red
-        return sf::Color(255, static_cast<sf::Uint8>(std::max(0, static_cast<int>(255 * (1 - (height - 0.75f) * 4)))), 0);
+        return sf::Color(255, static_cast<std::uint8_t>(std::max(0, static_cast<int>(255 * (1 - (height - 0.75f) * 4)))), 0);
     }
 }
 
@@ -1834,8 +1840,7 @@ sf::Vector2f PlotGen::to_screen(const Figure &fig, double x, double y, double w,
 
 void PlotGen::draw_text(const Figure &fig, double w, double h)
 {
-    sf::Text text;
-    text.setFont(font);
+    sf::Text text = plotgen_sf::make_text(font);
     text.setFillColor(sf::Color::Black);
 
     // Titre avec une taille de police réduite
@@ -1845,24 +1850,24 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
 
     // Positionner le titre en dehors de la zone de dessin
     double margin = 50.0f;
-    text.setPosition(w / 2 - textRect.width / 2, margin / 2 - textRect.height / 2);
+    plotgen_sf::set_position(text, w / 2 - plotgen_sf::rect_width(textRect) / 2, margin / 2 - plotgen_sf::rect_height(textRect) / 2);
     texture.draw(text);
 
     // X label avec police plus petite
     text.setCharacterSize(14);
     text.setString(sf::String::fromUtf8(fig.xlabel.begin(), fig.xlabel.end()));
     textRect = text.getLocalBounds();
-    text.setPosition(w / 2 - textRect.width / 2, h - 20);
+    plotgen_sf::set_position(text, w / 2 - plotgen_sf::rect_width(textRect) / 2, h - 20);
     texture.draw(text);
 
     // Y label avec police plus petite
     text.setCharacterSize(14);
     text.setString(sf::String::fromUtf8(fig.ylabel.begin(), fig.ylabel.end()));
     textRect = text.getLocalBounds();
-    text.setRotation(-90);
-    text.setPosition(10, h / 2 + textRect.width / 2);
+    plotgen_sf::set_rotation(text, -90);
+    plotgen_sf::set_position(text, 10, h / 2 + plotgen_sf::rect_width(textRect) / 2);
     texture.draw(text);
-    text.setRotation(0);
+    plotgen_sf::set_rotation(text, 0);
 
     // Légende
     if (fig.show_leg && !fig.curves.empty())
@@ -1889,7 +1894,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                 sf::FloatRect bounds = text.getLocalBounds();
 
                 // Couper le texte si trop long
-                if (bounds.width > max_legend_width)
+                if (plotgen_sf::rect_width(bounds) > max_legend_width)
                 {
                     // Découper en mots
                     std::vector<std::string> words;
@@ -1936,7 +1941,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                         text.setString(sf::String::fromUtf8(test_line.begin(), test_line.end()));
                         bounds = text.getLocalBounds();
 
-                        if (bounds.width <= max_legend_width)
+                        if (plotgen_sf::rect_width(bounds) <= max_legend_width)
                         {
                             current_line = test_line;
                         }
@@ -1971,7 +1976,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                 for (const auto &line : legend_lines)
                 {
                     text.setString(sf::String::fromUtf8(line.begin(), line.end()));
-                    double line_width = text.getLocalBounds().width;
+                    double line_width = plotgen_sf::rect_width(text.getLocalBounds());
                     max_content_width = std::max(max_content_width, line_width);
                 }
             }
@@ -2018,7 +2023,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                 sf::FloatRect viewport = current_view.getViewport();
 
                 // Élargir la vue pour inclure la légende
-                viewport.width += legend_width / w;
+                plotgen_sf::rect_set_width(viewport, plotgen_sf::rect_width(viewport) + legend_width / w);
                 current_view.setViewport(viewport);
                 texture.setView(current_view);
             }
@@ -2032,7 +2037,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
             // Dessiner l'arrière-plan de la légende
             sf::RectangleShape legendBg;
             legendBg.setSize(sf::Vector2f(legend_width, legend_height));
-            legendBg.setPosition(legend_x, legend_y);
+            plotgen_sf::set_position(legendBg, legend_x, legend_y);
             legendBg.setFillColor(sf::Color(255, 255, 255, 220));
             legendBg.setOutlineColor(sf::Color::Black);
             legendBg.setOutlineThickness(1.0f);
@@ -2057,7 +2062,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                 {
                     float thickness = std::max(1.0f, static_cast<float>(curve->style.thickness));
                     sf::RectangleShape line(sf::Vector2f(sample_width, thickness));
-                    line.setPosition(start_x, mid_y - thickness / 2);
+                    plotgen_sf::set_position(line, start_x, mid_y - thickness / 2);
                     line.setFillColor(curve->style.color);
                     texture.draw(line);
                 }
@@ -2068,7 +2073,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                     for (int i = 0; i < 3; i++)
                     {
                         sf::RectangleShape dash(sf::Vector2f(dash_length, thickness));
-                        dash.setPosition(start_x + i * 2 * dash_length, mid_y - thickness / 2);
+                        plotgen_sf::set_position(dash, start_x + i * 2 * dash_length, mid_y - thickness / 2);
                         dash.setFillColor(curve->style.color);
                         texture.draw(dash);
                     }
@@ -2087,7 +2092,7 @@ void PlotGen::draw_text(const Figure &fig, double w, double h)
                 for (const auto &line : legend_lines)
                 {
                     text.setString(sf::String::fromUtf8(line.begin(), line.end()));
-                    text.setPosition(start_x + sample_width + 10, text_y);
+                    plotgen_sf::set_position(text, start_x + sample_width + 10, text_y);
                     texture.draw(text);
                     text_y += 16;
                 }
@@ -2108,7 +2113,7 @@ void PlotGen::draw_symbol(const sf::Vector2f &position, const std::string &symbo
     if (symbol_type == "circle")
     {
         sf::CircleShape circle(size / 2);
-        circle.setOrigin(size / 2, size / 2);
+        plotgen_sf::set_origin(circle, size / 2, size / 2);
         circle.setPosition(position);
         circle.setFillColor(color);
         circle.setOutlineColor(sf::Color::Black);
@@ -2118,7 +2123,7 @@ void PlotGen::draw_symbol(const sf::Vector2f &position, const std::string &symbo
     else if (symbol_type == "square")
     {
         sf::RectangleShape square(sf::Vector2f(size, size));
-        square.setOrigin(size / 2, size / 2);
+        plotgen_sf::set_origin(square, size / 2, size / 2);
         square.setPosition(position);
         square.setFillColor(color);
         square.setOutlineColor(sf::Color::Black);
@@ -2128,7 +2133,7 @@ void PlotGen::draw_symbol(const sf::Vector2f &position, const std::string &symbo
     else if (symbol_type == "triangle")
     {
         sf::CircleShape triangle(size / 2, 3); // triangle = circle with 3 sides
-        triangle.setOrigin(size / 2, size / 2);
+        plotgen_sf::set_origin(triangle, size / 2, size / 2);
         triangle.setPosition(position);
         triangle.setFillColor(color);
         triangle.setOutlineColor(sf::Color::Black);
@@ -2138,9 +2143,9 @@ void PlotGen::draw_symbol(const sf::Vector2f &position, const std::string &symbo
     else if (symbol_type == "diamond")
     {
         sf::CircleShape diamond(size / 2, 4); // diamond = circle with 4 sides
-        diamond.setOrigin(size / 2, size / 2);
+        plotgen_sf::set_origin(diamond, size / 2, size / 2);
         diamond.setPosition(position);
-        diamond.setRotation(45.0f); // 45° rotation to get a diamond
+        plotgen_sf::set_rotation(diamond, 45.0f); // 45° rotation to get a diamond
         diamond.setFillColor(color);
         diamond.setOutlineColor(sf::Color::Black);
         diamond.setOutlineThickness(1.0f);
@@ -2155,7 +2160,7 @@ void PlotGen::draw_symbol(const sf::Vector2f &position, const std::string &symbo
 
         sf::ConvexShape star;
         star.setPointCount(numPoints * 2);
-        star.setOrigin(size / 2, size / 2);
+        plotgen_sf::set_origin(star, size / 2, size / 2);
         star.setPosition(position);
         star.setFillColor(color);
         star.setOutlineColor(sf::Color::Black);
@@ -2183,8 +2188,7 @@ void PlotGen::draw_text(const Figure &fig, const Figure::Curve &curve, double w,
     sf::Vector2f position = to_screen(fig, curve.x[0], curve.y[0], w, h);
 
     // Create the text object
-    sf::Text text_obj;
-    text_obj.setFont(font);
+    sf::Text text_obj = plotgen_sf::make_text(font);
     text_obj.setString(sf::String::fromUtf8(curve.text_content.begin(), curve.text_content.end()));
     text_obj.setFillColor(curve.style.color);
 
@@ -2196,7 +2200,7 @@ void PlotGen::draw_text(const Figure &fig, const Figure::Curve &curve, double w,
     sf::FloatRect textRect = text_obj.getLocalBounds();
 
     // Position the text with a slight offset to avoid overlapping the exact point
-    text_obj.setPosition(position.x - textRect.width / 2, position.y - textRect.height - 5);
+    plotgen_sf::set_position(text_obj, position.x - plotgen_sf::rect_width(textRect) / 2, position.y - plotgen_sf::rect_height(textRect) - 5);
 
     // Draw the text
     texture.draw(text_obj);
@@ -2247,9 +2251,9 @@ void PlotGen::draw_arrow_head(const Figure &fig, const Figure::Curve &curve, dou
 
     // Use an outline of the same color but slightly darker
     sf::Color outlineColor = curve.style.color;
-    outlineColor.r = static_cast<sf::Uint8>(std::max(0, static_cast<int>(outlineColor.r * 0.8f)));
-    outlineColor.g = static_cast<sf::Uint8>(std::max(0, static_cast<int>(outlineColor.g * 0.8f)));
-    outlineColor.b = static_cast<sf::Uint8>(std::max(0, static_cast<int>(outlineColor.b * 0.8f)));
+    outlineColor.r = static_cast<std::uint8_t>(std::max(0, static_cast<int>(outlineColor.r * 0.8f)));
+    outlineColor.g = static_cast<std::uint8_t>(std::max(0, static_cast<int>(outlineColor.g * 0.8f)));
+    outlineColor.b = static_cast<std::uint8_t>(std::max(0, static_cast<int>(outlineColor.b * 0.8f)));
 
     arrowhead.setOutlineColor(outlineColor);
     arrowhead.setOutlineThickness(1.0f);

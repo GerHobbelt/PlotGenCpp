@@ -895,9 +895,9 @@ void example_circles_text_arrows() {
             // Color gradient: blue at center to red at edges
             double dist_norm = r / 5.0; // Normalize to [0,1]
             arrow_style.color = sf::Color(
-                static_cast<sf::Uint8>(255 * dist_norm),  // Red
+                static_cast<std::uint8_t>(255 * dist_norm),  // Red
                 0,                                         // Green
-                static_cast<sf::Uint8>(255 * (1-dist_norm)) // Blue
+                static_cast<std::uint8_t>(255 * (1-dist_norm)) // Blue
             );
             
             // Draw arrow from (x,y) with calculated direction

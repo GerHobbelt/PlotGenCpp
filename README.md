@@ -30,8 +30,19 @@ PlotGenC++ is a C++ library designed for generating 2D plots and charts. It is b
 
 - CMake 3.10 or higher
 - C++ compiler with C++17 support
-- SFML 2.5 or higher
+- SFML 2.5 or higher (SFML 3.x is also supported)
 - (Optional) GTK3 and WebKit for enhanced SVG viewing capabilities
+
+
+> **SFML compatibility:** PlotGenC++ targets SFML 2.5+ but is also compatible
+> with SFML 3.x (including 3.0.x/3.1+), and works on **both Linux and macOS**.
+> Both the 2.x and 3.x API generations are supported via a small compatibility
+> layer in `include/plotgen.h`, so you can use whatever SFML version your
+> distribution ships:
+> - **macOS** (Homebrew): the `sfml` formula currently provides SFML 3, while
+>   `sfml@2` provides the 2.x line. Both are picked up automatically.
+> - **Linux**: modern distros (e.g. `libsfml-dev` on Debian/Ubuntu) are
+>   progressively moving to SFML 3; the code builds against either generation.
 
 ## Dependencies
 
